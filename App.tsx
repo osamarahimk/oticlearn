@@ -8,11 +8,13 @@ import { AITutor } from './pages/AITutor';
 import { Resources } from './pages/Resources';
 import { StudentPortal } from './pages/StudentPortal';
 import { CalendarPage } from './pages/CalendarPage';
-import { AppRoute, UserStats, Document } from './types';
+import { AppRoute, UserStats, Document, AudioTrack } from './types';
 import { GlassCard } from './components/GlassCard';
 import { UploadModal } from './components/UploadModal';
 import { MessageSquare, Bot, Paperclip, Send, Loader2, Menu } from 'lucide-react';
-import { uploadFileToStorage, extractTextContent, createDocumentRecord, updateDocumentStatus } from './services/backendService';
+import { uploadFileToStorage, extractTextContent, createDocumentRecord, updateDocumentStatus, deleteDocumentRecord } from './services/backendService';
+import { AudioPlayerOverlay } from './components/AudioPlayerOverlay';
+import { useAudioPlayer } from './hooks/useAudioPlayer';
 
 const App: React.FC = () => {
   const [currentRoute, setCurrentRoute] = useState<AppRoute>(AppRoute.DASHBOARD);
@@ -32,6 +34,12 @@ const App: React.FC = () => {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+
+  // --- Global Audio Player State ---
+  const { 
+    currentTrack, isPlaying, progress, currentTime, duration, playbackRate,
+    loadTrack, togglePlayPause, seekBy, changeSpeed, closePlayer 
+  } = useAudioPlayer();
 
   useEffect(() => {
     if (isDarkMode) document.documentElement.classList.add('dark');
@@ -85,6 +93,20 @@ const App: React.FC = () => {
       setCurrentRoute(AppRoute.READING_ROOM);
   };
 
+  const handleRenameDocument = (id: string, newTitle: string) => {
+      setDocuments(prev => prev.map(doc => doc.id === id ? { ...doc, title: newTitle } : doc));
+  };
+
+  const handleDeleteDocument = async (id: string) => {
+      // Remove locally first for immediate feedback
+      setDocuments(prev => prev.filter(doc => doc.id !== id));
+      if (activeDocumentId === id) {
+          setActiveDocumentId(null);
+      }
+      // Remove from backend
+      await deleteDocumentRecord(id);
+  };
+
   const handleContextUpdate = async (id: string) => {
       setDocuments(docs => docs.map(d => d.id === id ? { ...d, contextReady: true } : d));
       await updateDocumentStatus(id, { contextReady: true });
@@ -123,10 +145,13 @@ const App: React.FC = () => {
             onSelectDocument={handleDocumentSelect}
             onCloseDocument={() => setActiveDocumentId(null)}
             onUpdateDocumentContext={handleContextUpdate}
+            onRenameDocument={handleRenameDocument}
+            onDeleteDocument={handleDeleteDocument}
             addStudyPoints={addStudyPoints}
             updateReadingTime={updateReadingTime}
             triggerFileUpload={openUploadModal}
             searchQuery={searchQuery}
+            onPlayAudio={loadTrack}
         />;
 
       case AppRoute.STUDY_GROUPS:
@@ -234,6 +259,22 @@ const App: React.FC = () => {
 
         {renderContent()}
       </main>
+
+      {/* Global Persistent Audio Player */}
+      {currentTrack && (
+          <AudioPlayerOverlay 
+              track={currentTrack}
+              isPlaying={isPlaying}
+              progress={progress}
+              currentTime={currentTime}
+              duration={duration}
+              playbackRate={playbackRate}
+              onTogglePlay={togglePlayPause}
+              onSeekBy={seekBy}
+              onChangeSpeed={changeSpeed}
+              onClose={closePlayer}
+          />
+      )}
     </div>
   );
 };

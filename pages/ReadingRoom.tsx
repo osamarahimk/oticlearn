@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GlassCard } from '../components/GlassCard';
-import { generateSummary, askDocument, generateQuiz, getStudyTips, synthesizeDocumentContext } from '../services/geminiService';
-import { Document, QuizData, SummaryData, StudyTipsData } from '../types';
+import { generateSummary, askDocument, generateQuiz, getStudyTips, synthesizeDocumentContext, generatePodcastScript, generateSpeech } from '../services/geminiService';
+import { Document, QuizData, SummaryData, StudyTipsData, AudioTrack } from '../types';
 import { EncouragementAvatar } from '../components/EncouragementAvatar';
 import { audio } from '../services/audioService';
 import { useSpeech } from '../hooks/useSpeech';
@@ -10,7 +10,7 @@ import {
     Book, MessageCircle, FileText, CheckCircle, BrainCircuit, Loader2, 
     Sparkles, ChevronLeft, ChevronRight, Volume2, StopCircle, ArrowLeft,
     Clock, Library, Plus, Zap, ExternalLink, AlertCircle, Check, X as XIcon, RotateCcw,
-    ChevronDown, ChevronUp, Lightbulb, Bot, Mic, MicOff
+    ChevronDown, ChevronUp, Lightbulb, Bot, Mic, MicOff, Headphones, Trash2, Edit2
 } from 'lucide-react';
 import { Send } from 'lucide-react';
 
@@ -20,10 +20,13 @@ interface ReadingRoomProps {
     onSelectDocument: (doc: Document) => void;
     onCloseDocument: () => void;
     onUpdateDocumentContext: (id: string) => void;
+    onRenameDocument: (id: string, newTitle: string) => void;
+    onDeleteDocument: (id: string) => void;
     addStudyPoints: (points: number) => void;
     updateReadingTime: (minutes: number) => void;
     triggerFileUpload: () => void;
     searchQuery: string;
+    onPlayAudio: (track: AudioTrack) => void;
 }
 
 export const ReadingRoom: React.FC<ReadingRoomProps> = ({ 
@@ -32,10 +35,13 @@ export const ReadingRoom: React.FC<ReadingRoomProps> = ({
     onSelectDocument, 
     onCloseDocument,
     onUpdateDocumentContext,
+    onRenameDocument,
+    onDeleteDocument,
     addStudyPoints,
     updateReadingTime,
     triggerFileUpload,
-    searchQuery
+    searchQuery,
+    onPlayAudio
 }) => {
   // --- AI & UI State ---
   const [aiSidebarOpen, setAiSidebarOpen] = useState(true);
@@ -48,6 +54,7 @@ export const ReadingRoom: React.FC<ReadingRoomProps> = ({
   // Content States
   const [isLoading, setIsLoading] = useState(false);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false); // Audio State
   const [summaryData, setSummaryData] = useState<SummaryData | null>(null);
   const [tipsData, setTipsData] = useState<StudyTipsData | null>(null);
   
@@ -64,6 +71,10 @@ export const ReadingRoom: React.FC<ReadingRoomProps> = ({
   const [sessionSeconds, setSessionSeconds] = useState(0);
   const [showEncouragement, setShowEncouragement] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // --- Document Management State ---
+  const [editingDocId, setEditingDocId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
 
   // --- Audio & Speech Hooks ---
   const { speak, stopSpeaking, isSpeaking, startListening, stopListening, isListening, transcript, resetTranscript } = useSpeech();
@@ -185,6 +196,30 @@ export const ReadingRoom: React.FC<ReadingRoomProps> = ({
       if(result) audio.playSuccess();
   }
 
+  const handleGenerateNarratorAudio = async () => {
+      if (!activeDocument) return;
+      setIsGeneratingAudio(true);
+      audio.playClick();
+
+      // 1. Generate Script
+      const script = await generatePodcastScript(activeDocument.content);
+      
+      if (script) {
+          // 2. Generate Audio
+          const audioBase64 = await generateSpeech(script);
+          if (audioBase64) {
+              onPlayAudio({
+                  id: activeDocument.id,
+                  title: activeDocument.title,
+                  author: "AI Narrator",
+                  src: audioBase64
+              });
+              audio.playSuccess();
+          }
+      }
+      setIsGeneratingAudio(false);
+  };
+
   useEffect(() => {
     if (activeTab === 'summary') handleGenerateSummary();
     if (activeTab === 'quiz') handleGenerateQuiz();
@@ -198,6 +233,34 @@ export const ReadingRoom: React.FC<ReadingRoomProps> = ({
     } else if (activeDocument) {
         speak(activeDocument.content.substring(0, 1000)); // Limit reading to first 1000 chars for demo
     }
+  };
+
+  const startEditing = (e: React.MouseEvent, doc: Document) => {
+      e.stopPropagation();
+      setEditingDocId(doc.id);
+      setEditTitle(doc.title);
+  };
+
+  const saveTitle = (e: React.MouseEvent, id: string) => {
+      e.stopPropagation();
+      if (editTitle.trim()) {
+          onRenameDocument(id, editTitle);
+          audio.playSuccess();
+      }
+      setEditingDocId(null);
+  };
+
+  const cancelEdit = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setEditingDocId(null);
+  };
+
+  const triggerDelete = (e: React.MouseEvent, id: string) => {
+      e.stopPropagation();
+      if (window.confirm("Are you sure you want to delete this document?")) {
+          onDeleteDocument(id);
+          audio.playNotification();
+      }
   };
 
   // Filter logic
@@ -240,7 +303,7 @@ export const ReadingRoom: React.FC<ReadingRoomProps> = ({
                       {filteredDocs.map(doc => (
                           <GlassCard 
                             key={doc.id} 
-                            className="cursor-pointer group relative overflow-hidden" 
+                            className="cursor-pointer group relative overflow-visible" 
                             hoverEffect 
                             glowColor="blue"
                           >
@@ -249,22 +312,55 @@ export const ReadingRoom: React.FC<ReadingRoomProps> = ({
                                       <div className="p-3 bg-blue-500/10 rounded-xl text-blue-600 dark:text-blue-400">
                                           <FileText size={24} />
                                       </div>
-                                      {doc.contextReady ? (
-                                          <span className="px-2 py-1 bg-green-500/10 text-green-600 text-xs rounded-full flex items-center gap-1">
-                                              <Sparkles size={10} /> AI Ready
-                                          </span>
-                                      ) : (
-                                          <span className="px-2 py-1 bg-yellow-500/10 text-yellow-600 text-xs rounded-full flex items-center gap-1">
-                                              <Loader2 size={10} className="animate-spin" /> Processing
-                                          </span>
-                                      )}
+                                      {/* Action Buttons */}
+                                      <div className="flex items-center gap-1">
+                                         <button 
+                                            onClick={(e) => startEditing(e, doc)}
+                                            className="p-2 text-gray-400 hover:text-otic-orange hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors"
+                                            title="Rename"
+                                         >
+                                             <Edit2 size={16} />
+                                         </button>
+                                         <button 
+                                            onClick={(e) => triggerDelete(e, doc.id)}
+                                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors"
+                                            title="Delete"
+                                         >
+                                             <Trash2 size={16} />
+                                         </button>
+                                      </div>
                                   </div>
-                                  <h3 className="font-bold text-lg text-gray-800 dark:text-white mb-2 line-clamp-1">{doc.title}</h3>
+                                  
+                                  {editingDocId === doc.id ? (
+                                      <div className="mb-2 flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                          <input 
+                                            type="text" 
+                                            value={editTitle}
+                                            onChange={(e) => setEditTitle(e.target.value)}
+                                            className="w-full bg-white/50 dark:bg-black/20 border border-gray-300 dark:border-white/20 rounded-lg px-2 py-1 text-sm font-bold text-gray-800 dark:text-white focus:border-otic-orange outline-none"
+                                            autoFocus
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') saveTitle(e as any, doc.id);
+                                                if (e.key === 'Escape') cancelEdit(e as any);
+                                            }}
+                                          />
+                                          <button onClick={(e) => saveTitle(e, doc.id)} className="text-green-500 hover:text-green-600"><Check size={18}/></button>
+                                          <button onClick={(e) => cancelEdit(e)} className="text-red-500 hover:text-red-600"><XIcon size={18}/></button>
+                                      </div>
+                                  ) : (
+                                      <h3 className="font-bold text-lg text-gray-800 dark:text-white mb-2 line-clamp-1 group-hover:text-otic-orange transition-colors">{doc.title}</h3>
+                                  )}
+                                  
                                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 uppercase tracking-wider">{doc.type} • {doc.category}</p>
                                   <div className="flex items-center justify-between text-xs text-gray-400">
                                       <span>Added: {new Date(doc.uploadDate).toLocaleDateString()}</span>
                                       <span className="group-hover:translate-x-1 transition-transform text-otic-orange font-medium">Open →</span>
                                   </div>
+                                  {doc.contextReady && (
+                                       <div className="absolute bottom-4 right-16 px-2 py-1 bg-green-500/10 text-green-600 text-[10px] rounded-full flex items-center gap-1">
+                                          <Sparkles size={8} /> AI Ready
+                                      </div>
+                                  )}
                               </div>
                           </GlassCard>
                       ))}
@@ -295,11 +391,34 @@ export const ReadingRoom: React.FC<ReadingRoomProps> = ({
                     </div>
                 </div>
                 <div className="flex gap-2 items-center">
+                     <button 
+                        onClick={handleGenerateNarratorAudio} 
+                        disabled={isGeneratingAudio}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${isGeneratingAudio ? 'bg-gray-500/20 text-gray-400' : 'bg-gradient-to-r from-pink-500 to-rose-500 text-white hover:shadow-lg shadow-pink-500/30'}`}
+                     >
+                        {isGeneratingAudio ? <Loader2 size={14} className="animate-spin" /> : <Headphones size={14} />}
+                        {isGeneratingAudio ? "Creating..." : "Listen"}
+                     </button>
+
                      {activeDocument.type === 'TXT' && (
                         <button onClick={toggleReadDoc} className={`p-2 rounded-lg ${isSpeaking ? 'bg-red-500/20 text-red-500' : 'hover:bg-black/5 dark:hover:bg-white/10 text-gray-600 dark:text-white'}`}>
                             {isSpeaking ? <StopCircle size={20} /> : <Volume2 size={20} />}
                         </button>
                      )}
+
+                     <button 
+                        onClick={(e) => { 
+                            if(window.confirm("Delete this document?")) { 
+                                onDeleteDocument(activeDocument.id); 
+                                audio.playNotification();
+                            } 
+                        }}
+                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors"
+                        title="Delete Document"
+                     >
+                        <Trash2 size={20} />
+                     </button>
+
                      <button className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full text-gray-600 dark:text-white lg:hidden" onClick={() => setAiSidebarOpen(true)}>
                         <MessageCircle size={20} />
                      </button>

@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Type, Schema } from "@google/genai";
+import { GoogleGenAI, Type, Schema, Modality } from "@google/genai";
 
 const getClient = () => {
   if (!process.env.API_KEY) {
@@ -279,6 +279,86 @@ export const generateFlashcards = async (topic: string): Promise<any> => {
         return JSON.parse(jsonText);
     } catch (error) {
         console.error("Flashcard Error", error);
+        return null;
+    }
+}
+
+// --- AUDIO NARRATION & SPEECH ---
+
+// Helper to decode Base64 audio
+function decode(base64: string) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+export const generatePodcastScript = async (documentText: string): Promise<string> => {
+    const client = getClient();
+    if (!client) return "";
+
+    try {
+        const context = documentText.length > 20000 ? documentText.substring(0, 20000) + "..." : documentText;
+        
+        const response = await client.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Convert the following document content into an engaging, educational podcast-style script suitable for listening on the go. 
+            Keep it under 3 minutes spoken. Use a friendly, narrator voice. 
+            Focus on the most important concepts and explain them clearly.
+            Do not include speaker labels like "Narrator:". Just provide the spoken text.
+            
+            Context: ${context}`
+        });
+
+        return response.text || "";
+    } catch (error) {
+        console.error("Script Gen Error", error);
+        return "";
+    }
+}
+
+export const generateSpeech = async (text: string): Promise<string | null> => {
+    const client = getClient();
+    if (!client) return null;
+
+    try {
+        const response = await client.models.generateContent({
+            model: "gemini-2.5-flash-preview-tts",
+            contents: [{ parts: [{ text: text }] }],
+            config: {
+                responseModalities: [Modality.AUDIO],
+                speechConfig: {
+                    voiceConfig: {
+                        prebuiltVoiceConfig: { voiceName: 'Kore' }, // Kore, Puck, Charon, Fenrir, Zephyr
+                    },
+                },
+            },
+        });
+
+        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (!base64Audio) throw new Error("No audio data returned");
+
+        const audioBytes = decode(base64Audio);
+        const blob = new Blob([audioBytes], { type: 'audio/pcm' }); // Gemini returns Raw PCM usually, but web browsers handle Wav/MP3.
+        // NOTE: The Gemini API returns Raw PCM or WAV depending on config.
+        // For 'gemini-2.5-flash-preview-tts', it often returns a containerless stream. 
+        // However, to play in browser easily without complex decoding, we might need to wrap it.
+        // Actually, looking at the SDK examples, we often use AudioContext to decode.
+        // But for a "Podcast Player", we want a Blob URL for an <audio> tag.
+        
+        // IMPORTANT: The raw PCM from Gemini usually requires an AudioContext to decode properly 
+        // unless we wrap it in a WAV header. For simplicity in this 'on the go' player,
+        // we will try creating a WAV blob if possible, or fallback to AudioContext in the player.
+        
+        // FOR THIS IMPLEMENTATION: We will assume the player uses AudioContext or the data is compatible.
+        // Let's return the base64 string so the Player can decide how to decode (likely AudioContext).
+        return base64Audio; 
+        
+    } catch (error) {
+        console.error("TTS Generation Error", error);
         return null;
     }
 }

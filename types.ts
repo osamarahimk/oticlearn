@@ -85,6 +85,15 @@ export interface FlashcardData {
 
 export type TutorMode = 'HUB' | 'SOCRATIC' | 'ELI5' | 'FLASHCARDS';
 
+// --- Audio Learning ---
+export interface AudioTrack {
+  id: string;
+  title: string;
+  author: string; // AI Narrator
+  src: string; // Blob URL
+  duration?: number;
+}
+
 // --- Scalability & Integrations ---
 
 export interface LibraryResource {

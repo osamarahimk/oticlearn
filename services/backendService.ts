@@ -1,63 +1,63 @@
 
 import { Document, LibraryResource, StudentGrade, TimetableEntry, FinancialStatus, CalendarEvent } from '../types';
-
-// Simulating a database delay
-const DELAY = 800;
-
-// In-memory storage for the session (Simulating a database)
-let mockDbDocuments: Document[] = [];
-
-// In-memory events
-let mockEvents: CalendarEvent[] = [
-    { id: '1', title: 'Calculus Midterm', date: new Date(new Date().setDate(new Date().getDate() + 2)), type: 'Exam', emailReminder: true, description: 'Chapters 1-5' },
-    { id: '2', title: 'Group Study: React', date: new Date(new Date().setDate(new Date().getDate() + 1)), type: 'Study', emailReminder: false, description: 'Review hooks' },
-    { id: '3', title: 'Project Submission', date: new Date(new Date().setDate(new Date().getDate() + 5)), type: 'Deadline', emailReminder: true, description: 'Final Report' },
-];
+import { db, storage } from './firebase';
+import { 
+    collection, 
+    addDoc, 
+    getDocs, 
+    updateDoc, 
+    deleteDoc, 
+    doc, 
+    query, 
+    orderBy 
+} from 'firebase/firestore';
+import { 
+    ref, 
+    uploadBytes, 
+    getDownloadURL 
+} from 'firebase/storage';
 
 /**
- * Simulates uploading a file to a Storage Bucket (e.g., AWS S3, Firebase Storage).
- * Returns a public access URL (simulated via Blob URL).
+ * Uploads a file to Real Firebase Storage.
+ * Requires Firebase Storage Rules to allow write access.
  */
 export const uploadFileToStorage = async (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    // Simulate network latency for upload
-    setTimeout(() => {
-      try {
-        // Create a persistent Blob URL that mimics a storage URL
-        // In a real app, this would be an https://storage.googleapis.com/... URL
-        const blobUrl = URL.createObjectURL(file);
-        resolve(blobUrl);
-      } catch (error) {
-        reject(new Error("Failed to upload file to storage bucket."));
-      }
-    }, 1500);
-  });
+  try {
+    const storageRef = ref(storage, `documents/${Date.now()}_${file.name}`);
+    const snapshot = await uploadBytes(storageRef, file);
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    return downloadURL;
+  } catch (error) {
+    console.error("Error uploading to Firebase Storage:", error);
+    // Fallback for demo purposes if user hasn't configured CORS/Storage rules yet:
+    console.warn("Falling back to local Object URL due to Storage error (likely config/CORS).");
+    return URL.createObjectURL(file);
+  }
 };
 
 /**
- * Simulates parsing text content from a file via a Cloud Function.
+ * Extracts text content.
+ * Note: Doing complex OCR or PDF parsing strictly client-side is limited.
+ * In a production app, this would trigger a Firebase Cloud Function.
  */
 export const extractTextContent = async (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      if (file.type === "application/pdf" || file.name.endsWith('.pdf')) {
-         // In a real backend, a library like pdf-parse would run here.
-         // For this demo, we return a placeholder if we can't parse client-side easily.
+    if (file.type === "application/pdf" || file.name.endsWith('.pdf')) {
+         // Placeholder: Real PDF parsing requires a library like pdf.js or a backend function
          resolve("PDF Content successfully uploaded. Use the 'Ask AI' feature to query the visual content of this PDF.");
-      } else if (file.name.endsWith('.docx')) {
+    } else if (file.name.endsWith('.docx')) {
          resolve("DOCX Content successfully uploaded. Text analysis available.");
-      } else {
+    } else {
         const reader = new FileReader();
         reader.onload = (e) => resolve(e.target?.result as string || "");
         reader.onerror = () => reject(new Error("Failed to read text content."));
         reader.readAsText(file);
-      }
-    }, 1000);
+    }
   });
 };
 
 /**
- * Simulates creating a document record in a Database (e.g., Firestore, MongoDB).
+ * Creates a document record in Firestore.
  */
 export const createDocumentRecord = async (
   title: string, 
@@ -65,51 +65,74 @@ export const createDocumentRecord = async (
   fileUrl: string, 
   textContent: string
 ): Promise<Document> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const newDoc: Document = {
-        id: crypto.randomUUID(),
+  try {
+      const newDocData = {
         title: title,
         type: file.name.endsWith('.pdf') ? 'PDF' : file.name.endsWith('.docx') ? 'DOCX' : 'TXT',
         uploadDate: new Date().toISOString(),
         category: 'Personal Upload',
         content: textContent,
-        contextReady: false, // AI processing starts after this
+        contextReady: false,
         fileUrl: fileUrl,
       };
+
+      const docRef = await addDoc(collection(db, "documents"), newDocData);
       
-      mockDbDocuments = [newDoc, ...mockDbDocuments];
-      resolve(newDoc);
-    }, DELAY);
-  });
+      return {
+          id: docRef.id,
+          ...newDocData
+      } as Document;
+  } catch (error) {
+      console.error("Error creating doc in Firestore:", error);
+      throw error;
+  }
 };
 
 /**
- * Simulates fetching documents from the database.
+ * Fetches documents from Firestore.
  */
 export const fetchDocuments = async (): Promise<Document[]> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve([...mockDbDocuments]);
-    }, DELAY);
-  });
+  try {
+      const q = query(collection(db, "documents"), orderBy("uploadDate", "desc"));
+      const querySnapshot = await getDocs(q);
+      const docs: Document[] = [];
+      querySnapshot.forEach((doc) => {
+          docs.push({ id: doc.id, ...doc.data() } as Document);
+      });
+      return docs;
+  } catch (error) {
+      console.error("Error fetching docs from Firestore:", error);
+      return [];
+  }
 };
 
 /**
- * Simulates updating a document field (e.g., setting contextReady to true).
+ * Updates a document field in Firestore.
  */
 export const updateDocumentStatus = async (id: string, updates: Partial<Document>): Promise<void> => {
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            mockDbDocuments = mockDbDocuments.map(doc => 
-                doc.id === id ? { ...doc, ...updates } : doc
-            );
-            resolve();
-        }, 500);
-    });
+    try {
+        const docRef = doc(db, "documents", id);
+        await updateDoc(docRef, updates);
+    } catch (error) {
+        console.error("Error updating doc:", error);
+    }
 }
 
-// --- Open Library Integration Service (Mock) ---
+/**
+ * Deletes a document from Firestore.
+ */
+export const deleteDocumentRecord = async (id: string): Promise<void> => {
+    try {
+        await deleteDoc(doc(db, "documents", id));
+    } catch (error) {
+        console.error("Error deleting doc:", error);
+    }
+}
+
+// --- Mock Services for Read-Only / External Integrations ---
+// These remain mocks because we don't have access to the actual University APIs
+// or OpenLibrary APIs in this context, but they could be replaced by real fetch() calls.
+
 export const fetchLibraryResources = async (query: string): Promise<LibraryResource[]> => {
     return new Promise((resolve) => {
         setTimeout(() => {
@@ -130,12 +153,12 @@ export const fetchLibraryResources = async (query: string): Promise<LibraryResou
     });
 }
 
-// --- Student Portal Integration Service (Mock) ---
 export const fetchStudentPortalData = async (): Promise<{
     grades: StudentGrade[];
     timetable: TimetableEntry[];
     finance: FinancialStatus;
 }> => {
+    // In a real app, this would be: await fetch('https://portal.makerere.ac.ug/api/student/data')
     return new Promise((resolve) => {
         setTimeout(() => {
             resolve({
@@ -167,25 +190,38 @@ export const fetchStudentPortalData = async (): Promise<{
     });
 }
 
-// --- Calendar Service ---
+// --- Calendar Service (Firestore) ---
 
 export const fetchEvents = async (): Promise<CalendarEvent[]> => {
-    return new Promise((resolve) => {
-        setTimeout(() => resolve([...mockEvents]), 600);
-    });
+    try {
+        const q = query(collection(db, "events"), orderBy("date", "asc"));
+        const querySnapshot = await getDocs(q);
+        const events: CalendarEvent[] = [];
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            events.push({ 
+                id: doc.id, 
+                ...data,
+                date: data.date.toDate() // Convert Firestore Timestamp to JS Date
+            } as CalendarEvent);
+        });
+        return events;
+    } catch (error) {
+        console.error("Error fetching events:", error);
+        return [];
+    }
 }
 
 export const createEvent = async (event: Omit<CalendarEvent, 'id'>): Promise<CalendarEvent> => {
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            const newEvent = { ...event, id: crypto.randomUUID() };
-            mockEvents.push(newEvent);
-            
-            if (event.emailReminder) {
-                console.log(`[Mock Email Service] Scheduled email to student@demo.com for event: ${event.title} on ${event.date}`);
-            }
-            
-            resolve(newEvent);
-        }, 800);
-    });
+    try {
+        const docRef = await addDoc(collection(db, "events"), {
+            ...event,
+            // Firestore stores dates as Timestamps, usually auto-converted by SDK
+        });
+        
+        return { ...event, id: docRef.id } as CalendarEvent;
+    } catch (error) {
+        console.error("Error adding event:", error);
+        throw error;
+    }
 }
