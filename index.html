@@ -3,6 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- CSP to allow blob: and data: sources for iframes (PDF preview) -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https: blob: data:; frame-src 'self' https: blob: data:; img-src 'self' https: blob: data:;">
     <title>OticLearn</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>

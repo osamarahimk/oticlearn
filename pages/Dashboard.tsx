@@ -1,4 +1,5 @@
-import React from 'react';
+
+import React, { useState } from 'react';
 import { GlassCard } from '../components/GlassCard';
 import { UserStats, Course, AppRoute } from '../types';
 import { 
@@ -15,9 +16,10 @@ import { Trophy, Clock, Book, Zap, ArrowRight } from 'lucide-react';
 interface DashboardProps {
   stats: UserStats;
   onNavigate: (route: AppRoute) => void;
+  searchQuery: string;
 }
 
-const activityData = [
+const weeklyActivityData = [
   { name: 'Mon', hours: 2 },
   { name: 'Tue', hours: 4.5 },
   { name: 'Wed', hours: 3 },
@@ -27,13 +29,28 @@ const activityData = [
   { name: 'Sun', hours: 4 },
 ];
 
+const monthlyActivityData = [
+  { name: 'Wk 1', hours: 15 },
+  { name: 'Wk 2', hours: 22 },
+  { name: 'Wk 3', hours: 18 },
+  { name: 'Wk 4', hours: 28 },
+];
+
 const courses: Course[] = [
   { id: '1', title: 'Agentic AI Core', instructor: 'Dr. Smith', progress: 75, totalModules: 10, completedModules: 7, thumbnail: 'https://picsum.photos/seed/ai/200/120' },
   { id: '2', title: 'Business Analytics', instructor: 'Prof. Doe', progress: 30, totalModules: 12, completedModules: 4, thumbnail: 'https://picsum.photos/seed/biz/200/120' },
   { id: '3', title: 'Advanced React Patterns', instructor: 'Sarah Tech', progress: 10, totalModules: 8, completedModules: 1, thumbnail: 'https://picsum.photos/seed/react/200/120' },
+  { id: '4', title: 'Modern History', instructor: 'Mr. James', progress: 0, totalModules: 15, completedModules: 0, thumbnail: 'https://picsum.photos/seed/history/200/120' },
 ];
 
-export const Dashboard: React.FC<DashboardProps> = ({ stats, onNavigate }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ stats, onNavigate, searchQuery }) => {
+  const [chartTimeRange, setChartTimeRange] = useState<'week' | 'month'>('week');
+
+  const filteredCourses = courses.filter(c => 
+    c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.instructor.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Welcome Section */}
@@ -55,45 +72,53 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, onNavigate }) => {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <GlassCard className="flex items-center gap-4" hoverEffect glowColor="blue">
-          <div className="p-3 bg-blue-500/20 rounded-xl text-blue-500 dark:text-blue-400">
-            <Clock className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-gray-500 dark:text-gray-400 text-sm">Study Time</p>
-            <p className="text-2xl font-bold text-gray-800 dark:text-white">{Math.floor(stats.readingTimeMinutes / 60)}h {stats.readingTimeMinutes % 60}m</p>
-          </div>
-        </GlassCard>
+        <div onClick={() => onNavigate(AppRoute.READING_ROOM)} className="cursor-pointer">
+            <GlassCard className="flex items-center gap-4 h-full" hoverEffect glowColor="blue">
+            <div className="p-3 bg-blue-500/20 rounded-xl text-blue-500 dark:text-blue-400">
+                <Clock className="w-6 h-6" />
+            </div>
+            <div>
+                <p className="text-gray-500 dark:text-gray-400 text-sm">Study Time</p>
+                <p className="text-2xl font-bold text-gray-800 dark:text-white">{Math.floor(stats.readingTimeMinutes / 60)}h {stats.readingTimeMinutes % 60}m</p>
+            </div>
+            </GlassCard>
+        </div>
 
-        <GlassCard className="flex items-center gap-4" hoverEffect glowColor="orange">
-          <div className="p-3 bg-otic-orange/20 rounded-xl text-otic-orange">
-            <Trophy className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-gray-500 dark:text-gray-400 text-sm">Total Points</p>
-            <p className="text-2xl font-bold text-gray-800 dark:text-white">{stats.points}</p>
-          </div>
-        </GlassCard>
+        <div className="cursor-pointer">
+            <GlassCard className="flex items-center gap-4 h-full" hoverEffect glowColor="orange">
+            <div className="p-3 bg-otic-orange/20 rounded-xl text-otic-orange">
+                <Trophy className="w-6 h-6" />
+            </div>
+            <div>
+                <p className="text-gray-500 dark:text-gray-400 text-sm">Total Points</p>
+                <p className="text-2xl font-bold text-gray-800 dark:text-white">{stats.points}</p>
+            </div>
+            </GlassCard>
+        </div>
 
-        <GlassCard className="flex items-center gap-4" hoverEffect glowColor="none">
-          <div className="p-3 bg-green-500/20 rounded-xl text-green-600 dark:text-green-400">
-            <Book className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-gray-500 dark:text-gray-400 text-sm">Courses Active</p>
-            <p className="text-2xl font-bold text-gray-800 dark:text-white">{courses.length}</p>
-          </div>
-        </GlassCard>
+        <div className="cursor-pointer">
+            <GlassCard className="flex items-center gap-4 h-full" hoverEffect glowColor="none">
+            <div className="p-3 bg-green-500/20 rounded-xl text-green-600 dark:text-green-400">
+                <Book className="w-6 h-6" />
+            </div>
+            <div>
+                <p className="text-gray-500 dark:text-gray-400 text-sm">Courses Active</p>
+                <p className="text-2xl font-bold text-gray-800 dark:text-white">{courses.length}</p>
+            </div>
+            </GlassCard>
+        </div>
 
-        <GlassCard className="flex items-center gap-4" hoverEffect glowColor="none">
-          <div className="p-3 bg-purple-500/20 rounded-xl text-purple-600 dark:text-purple-400">
-            <Zap className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-gray-500 dark:text-gray-400 text-sm">Current Level</p>
-            <p className="text-2xl font-bold text-gray-800 dark:text-white">Lvl {stats.level}</p>
-          </div>
-        </GlassCard>
+        <div onClick={() => onNavigate(AppRoute.PROFILE)} className="cursor-pointer">
+            <GlassCard className="flex items-center gap-4 h-full" hoverEffect glowColor="none">
+            <div className="p-3 bg-purple-500/20 rounded-xl text-purple-600 dark:text-purple-400">
+                <Zap className="w-6 h-6" />
+            </div>
+            <div>
+                <p className="text-gray-500 dark:text-gray-400 text-sm">Current Level</p>
+                <p className="text-2xl font-bold text-gray-800 dark:text-white">Lvl {stats.level}</p>
+            </div>
+            </GlassCard>
+        </div>
       </div>
 
       {/* Main Content Split */}
@@ -104,14 +129,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, onNavigate }) => {
           <GlassCard>
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-gray-800 dark:text-white">Learning Activity</h3>
-              <select className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1 text-sm text-gray-600 dark:text-gray-300 outline-none">
-                <option>This Week</option>
-                <option>Last Month</option>
+              <select 
+                value={chartTimeRange}
+                onChange={(e) => setChartTimeRange(e.target.value as 'week' | 'month')}
+                className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1 text-sm text-gray-600 dark:text-gray-300 outline-none cursor-pointer hover:border-otic-orange/50 transition-colors"
+              >
+                <option value="week">This Week</option>
+                <option value="month">Last Month</option>
               </select>
             </div>
             <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={activityData}>
+                <AreaChart data={chartTimeRange === 'week' ? weeklyActivityData : monthlyActivityData}>
                   <defs>
                     <linearGradient id="colorHours" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
@@ -125,39 +154,48 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, onNavigate }) => {
                     contentStyle={{ backgroundColor: '#1e1b4b', borderColor: '#374151', borderRadius: '8px', color: '#fff' }}
                     itemStyle={{ color: '#f3f4f6' }}
                   />
-                  <Area type="monotone" dataKey="hours" stroke="#f97316" strokeWidth={3} fillOpacity={1} fill="url(#colorHours)" />
+                  <Area type="monotone" dataKey="hours" stroke="#f97316" strokeWidth={3} fillOpacity={1} fill="url(#colorHours)" animationDuration={1000} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </GlassCard>
 
           <div>
-            <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-4">Continue Learning</h3>
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-bold text-gray-800 dark:text-white">Continue Learning</h3>
+                {searchQuery && <span className="text-sm text-gray-500">Searching: "{searchQuery}"</span>}
+            </div>
             <div className="space-y-4">
-              {courses.map(course => (
-                <GlassCard key={course.id} className="flex flex-col sm:flex-row gap-4 items-center" hoverEffect>
-                  <img src={course.thumbnail} alt={course.title} className="w-full sm:w-32 h-24 object-cover rounded-xl" />
-                  <div className="flex-1 w-full">
-                    <div className="flex justify-between mb-1">
-                      <h4 className="font-semibold text-lg text-gray-900 dark:text-white">{course.title}</h4>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">{course.completedModules}/{course.totalModules} Modules</span>
-                    </div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">{course.instructor}</p>
-                    <div className="w-full bg-gray-200 dark:bg-gray-700/50 h-2 rounded-full overflow-hidden">
-                      <div 
-                        className="bg-gradient-to-r from-otic-orange to-otic-gold h-full rounded-full" 
-                        style={{ width: `${course.progress}%` }}
-                      ></div>
-                    </div>
+              {filteredCourses.length > 0 ? (
+                  filteredCourses.map(course => (
+                    <GlassCard key={course.id} className="flex flex-col sm:flex-row gap-4 items-center" hoverEffect>
+                      <img src={course.thumbnail} alt={course.title} className="w-full sm:w-32 h-24 object-cover rounded-xl" />
+                      <div className="flex-1 w-full">
+                        <div className="flex justify-between mb-1">
+                          <h4 className="font-semibold text-lg text-gray-900 dark:text-white">{course.title}</h4>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">{course.completedModules}/{course.totalModules} Modules</span>
+                        </div>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">{course.instructor}</p>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700/50 h-2 rounded-full overflow-hidden">
+                          <div 
+                            className="bg-gradient-to-r from-otic-orange to-otic-gold h-full rounded-full" 
+                            style={{ width: `${course.progress}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => onNavigate(AppRoute.READING_ROOM)}
+                        className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 rounded-lg text-sm font-medium transition-colors whitespace-nowrap text-gray-800 dark:text-white"
+                      >
+                        Continue
+                      </button>
+                    </GlassCard>
+                  ))
+              ) : (
+                  <div className="text-center py-12 bg-white/5 rounded-2xl border border-white/10">
+                      <p className="text-gray-500">No courses found matching "{searchQuery}".</p>
                   </div>
-                  <button 
-                    onClick={() => onNavigate(AppRoute.READING_ROOM)}
-                    className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 rounded-lg text-sm font-medium transition-colors whitespace-nowrap text-gray-800 dark:text-white"
-                  >
-                    Continue
-                  </button>
-                </GlassCard>
-              ))}
+              )}
             </div>
           </div>
         </div>
@@ -185,14 +223,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, onNavigate }) => {
             </div>
           </GlassCard>
           
-          <GlassCard className="bg-gradient-to-b from-purple-100 to-white dark:from-otic-purple/50 dark:to-transparent">
+          <GlassCard className="bg-gradient-to-b from-purple-100 to-white dark:from-otic-purple/50 dark:to-transparent relative overflow-hidden">
+             <div className="absolute top-0 right-0 w-20 h-20 bg-white/10 rounded-full blur-xl -mr-5 -mt-5"></div>
              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Daily Challenge</h3>
              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">Read "Introduction to Neural Networks" and score >80% on the quiz.</p>
              <div className="flex justify-between items-center">
-                <span className="text-xs px-2 py-1 rounded bg-black/5 dark:bg-white/10 text-gray-700 dark:text-white">+500 XP</span>
+                <span className="text-xs px-2 py-1 rounded bg-black/5 dark:bg-white/10 text-gray-700 dark:text-white font-mono">+500 XP</span>
                 <button 
                     onClick={() => onNavigate(AppRoute.READING_ROOM)}
-                    className="text-sm text-otic-orange hover:text-orange-700 dark:hover:text-white transition-colors font-medium"
+                    className="text-sm bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg text-gray-800 dark:text-white transition-all font-bold"
                 >
                     Start Now
                 </button>
