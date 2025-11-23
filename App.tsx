@@ -12,7 +12,7 @@ import { AppRoute, UserStats, Document, AudioTrack } from './types';
 import { GlassCard } from './components/GlassCard';
 import { UploadModal } from './components/UploadModal';
 import { MessageSquare, Bot, Paperclip, Send, Loader2, Menu } from 'lucide-react';
-import { uploadFileToStorage, extractTextContent, createDocumentRecord, updateDocumentStatus, deleteDocumentRecord } from './services/backendService';
+import { uploadFileToStorage, extractTextContent, createDocumentRecord, updateDocumentStatus, deleteDocumentRecord, fetchDocuments } from './services/backendService';
 import { AudioPlayerOverlay } from './components/AudioPlayerOverlay';
 import { useAudioPlayer } from './hooks/useAudioPlayer';
 
@@ -40,6 +40,19 @@ const App: React.FC = () => {
     currentTrack, isPlaying, progress, currentTime, duration, playbackRate,
     loadTrack, togglePlayPause, seekBy, changeSpeed, closePlayer 
   } = useAudioPlayer();
+
+  // Load documents from Local DB on mount
+  useEffect(() => {
+      const loadDocs = async () => {
+          try {
+              const docs = await fetchDocuments();
+              setDocuments(docs);
+          } catch (e) {
+              console.error("Failed to load documents from DB", e);
+          }
+      };
+      loadDocs();
+  }, []);
 
   useEffect(() => {
     if (isDarkMode) document.documentElement.classList.add('dark');
@@ -98,13 +111,18 @@ const App: React.FC = () => {
   };
 
   const handleDeleteDocument = async (id: string) => {
-      // Remove locally first for immediate feedback
-      setDocuments(prev => prev.filter(doc => doc.id !== id));
-      if (activeDocumentId === id) {
-          setActiveDocumentId(null);
+      try {
+        // Optimistic UI Update: Remove locally first for immediate feedback
+        setDocuments(prev => prev.filter(doc => doc.id !== id));
+        if (activeDocumentId === id) {
+            setActiveDocumentId(null);
+        }
+        // Remove from backend (IndexedDB)
+        await deleteDocumentRecord(id);
+      } catch (error) {
+          console.error("Failed to delete document", error);
+          // Optionally reload documents to restore state if sync failed, but for IDB it's rare
       }
-      // Remove from backend
-      await deleteDocumentRecord(id);
   };
 
   const handleContextUpdate = async (id: string) => {
@@ -128,7 +146,7 @@ const App: React.FC = () => {
                     <div className="absolute inset-0 bg-otic-orange/20 blur-xl rounded-full"></div>
                     <Loader2 className="w-16 h-16 text-otic-orange animate-spin relative z-10" />
                 </div>
-                <h3 className="text-2xl font-bold mt-6 text-gray-800 dark:text-white">Uploading to Cloud Storage...</h3>
+                <h3 className="text-2xl font-bold mt-6 text-gray-800 dark:text-white">Uploading to Local Storage...</h3>
                 <p className="text-gray-500 dark:text-gray-400 mt-2">Synthesizing document structure</p>
             </div>
         )

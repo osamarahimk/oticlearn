@@ -1,52 +1,53 @@
 
 import { Document, LibraryResource, StudentGrade, TimetableEntry, FinancialStatus, CalendarEvent } from '../types';
-import { db, storage } from './firebase';
-import { 
-    collection, 
-    addDoc, 
-    getDocs, 
-    updateDoc, 
-    deleteDoc, 
-    doc, 
-    query, 
-    orderBy 
-} from 'firebase/firestore';
-import { 
-    ref, 
-    uploadBytes, 
-    getDownloadURL 
-} from 'firebase/storage';
 
-/**
- * Uploads a file to Real Firebase Storage.
- * Requires Firebase Storage Rules to allow write access.
- */
-export const uploadFileToStorage = async (file: File): Promise<string> => {
-  try {
-    const storageRef = ref(storage, `documents/${Date.now()}_${file.name}`);
-    const snapshot = await uploadBytes(storageRef, file);
-    const downloadURL = await getDownloadURL(snapshot.ref);
-    return downloadURL;
-  } catch (error) {
-    console.error("Error uploading to Firebase Storage:", error);
-    // Fallback for demo purposes if user hasn't configured CORS/Storage rules yet:
-    console.warn("Falling back to local Object URL due to Storage error (likely config/CORS).");
-    return URL.createObjectURL(file);
-  }
+const DB_NAME = 'OticLearnDB';
+const DB_VERSION = 1;
+
+// --- IndexedDB Helpers ---
+
+const openDB = (): Promise<IDBDatabase> => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      // Documents Store
+      if (!db.objectStoreNames.contains('documents')) {
+        db.createObjectStore('documents', { keyPath: 'id' });
+      }
+      // Events Store
+      if (!db.objectStoreNames.contains('events')) {
+        db.createObjectStore('events', { keyPath: 'id' });
+      }
+    };
+
+    request.onsuccess = (event) => resolve((event.target as IDBOpenDBRequest).result);
+    request.onerror = (event) => reject((event.target as IDBOpenDBRequest).error);
+  });
 };
 
-/**
- * Extracts text content.
- * Note: Doing complex OCR or PDF parsing strictly client-side is limited.
- * In a production app, this would trigger a Firebase Cloud Function.
- */
+const getStore = async (storeName: string, mode: IDBTransactionMode = 'readonly') => {
+  const db = await openDB();
+  const tx = db.transaction(storeName, mode);
+  return tx.objectStore(storeName);
+};
+
+// --- Document Services ---
+
+export const uploadFileToStorage = async (file: File): Promise<string> => {
+  // In IndexedDB, we don't "upload" to a URL. We store the File object directly.
+  // We return a temporary Blob URL here for immediate UI preview, but the
+  // createDocumentRecord function handles the actual persistence of the Blob.
+  return URL.createObjectURL(file);
+};
+
 export const extractTextContent = async (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     if (file.type === "application/pdf" || file.name.endsWith('.pdf')) {
-         // Placeholder: Real PDF parsing requires a library like pdf.js or a backend function
-         resolve("PDF Content successfully uploaded. Use the 'Ask AI' feature to query the visual content of this PDF.");
+         resolve("PDF Content. Use AI Chat to interact with this document.");
     } else if (file.name.endsWith('.docx')) {
-         resolve("DOCX Content successfully uploaded. Text analysis available.");
+         resolve("DOCX Content. Analysis available.");
     } else {
         const reader = new FileReader();
         reader.onload = (e) => resolve(e.target?.result as string || "");
@@ -56,82 +57,122 @@ export const extractTextContent = async (file: File): Promise<string> => {
   });
 };
 
-/**
- * Creates a document record in Firestore.
- */
 export const createDocumentRecord = async (
   title: string, 
   file: File, 
-  fileUrl: string, 
+  fileUrl: string, // Only used for immediate display, we persist 'file' blob
   textContent: string
 ): Promise<Document> => {
-  try {
-      const newDocData = {
-        title: title,
-        type: file.name.endsWith('.pdf') ? 'PDF' : file.name.endsWith('.docx') ? 'DOCX' : 'TXT',
-        uploadDate: new Date().toISOString(),
-        category: 'Personal Upload',
-        content: textContent,
-        contextReady: false,
-        fileUrl: fileUrl,
-      };
+  const store = await getStore('documents', 'readwrite');
+  
+  const newDoc: any = {
+    id: Date.now().toString(),
+    title: title,
+    type: file.name.endsWith('.pdf') ? 'PDF' : file.name.endsWith('.docx') ? 'DOCX' : 'TXT',
+    uploadDate: new Date().toISOString(),
+    category: 'Personal Upload',
+    content: textContent,
+    contextReady: false,
+    fileBlob: file, // Store the actual file blob in IDB
+  };
 
-      const docRef = await addDoc(collection(db, "documents"), newDocData);
-      
-      return {
-          id: docRef.id,
-          ...newDocData
-      } as Document;
-  } catch (error) {
-      console.error("Error creating doc in Firestore:", error);
-      throw error;
-  }
+  return new Promise((resolve, reject) => {
+    const request = store.add(newDoc);
+    request.onsuccess = () => {
+      // Return the document object with a usable URL for the UI
+      resolve({
+          ...newDoc,
+          fileUrl: URL.createObjectURL(file),
+          fileBlob: undefined // Don't leak blob into UI state unnecessarily
+      } as Document);
+    };
+    request.onerror = () => reject(request.error);
+  });
 };
 
-/**
- * Fetches documents from Firestore.
- */
 export const fetchDocuments = async (): Promise<Document[]> => {
-  try {
-      const q = query(collection(db, "documents"), orderBy("uploadDate", "desc"));
-      const querySnapshot = await getDocs(q);
-      const docs: Document[] = [];
-      querySnapshot.forEach((doc) => {
-          docs.push({ id: doc.id, ...doc.data() } as Document);
-      });
-      return docs;
-  } catch (error) {
-      console.error("Error fetching docs from Firestore:", error);
-      return [];
-  }
+  const store = await getStore('documents');
+  return new Promise((resolve, reject) => {
+    const request = store.getAll();
+    request.onsuccess = () => {
+      const results = request.result;
+      // Convert stored Blobs back to URL strings for the frontend
+      const docs = results.map((doc: any) => ({
+          ...doc,
+          fileUrl: doc.fileBlob ? URL.createObjectURL(doc.fileBlob) : undefined,
+          fileBlob: undefined // Clean up for UI state
+      }));
+      // Sort desc
+      docs.sort((a: Document, b: Document) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
+      resolve(docs);
+    };
+    request.onerror = () => reject(request.error);
+  });
 };
 
-/**
- * Updates a document field in Firestore.
- */
 export const updateDocumentStatus = async (id: string, updates: Partial<Document>): Promise<void> => {
-    try {
-        const docRef = doc(db, "documents", id);
-        await updateDoc(docRef, updates);
-    } catch (error) {
-        console.error("Error updating doc:", error);
-    }
-}
+  const db = await openDB();
+  const tx = db.transaction('documents', 'readwrite');
+  const store = tx.objectStore('documents');
+  
+  return new Promise((resolve, reject) => {
+      const getReq = store.get(id);
+      getReq.onsuccess = () => {
+          const doc = getReq.result;
+          if (!doc) {
+              resolve();
+              return;
+          }
+          const updatedDoc = { ...doc, ...updates };
+          store.put(updatedDoc);
+          resolve();
+      };
+      getReq.onerror = () => reject(getReq.error);
+  });
+};
 
-/**
- * Deletes a document from Firestore.
- */
 export const deleteDocumentRecord = async (id: string): Promise<void> => {
-    try {
-        await deleteDoc(doc(db, "documents", id));
-    } catch (error) {
-        console.error("Error deleting doc:", error);
-    }
-}
+  const store = await getStore('documents', 'readwrite');
+  return new Promise((resolve, reject) => {
+      const request = store.delete(id);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+  });
+};
 
-// --- Mock Services for Read-Only / External Integrations ---
-// These remain mocks because we don't have access to the actual University APIs
-// or OpenLibrary APIs in this context, but they could be replaced by real fetch() calls.
+// --- Calendar Services (IndexedDB) ---
+
+export const fetchEvents = async (): Promise<CalendarEvent[]> => {
+  const store = await getStore('events');
+  return new Promise((resolve, reject) => {
+      const request = store.getAll();
+      request.onsuccess = () => {
+          const events = request.result.map((ev: any) => ({
+              ...ev,
+              date: new Date(ev.date) // Convert string back to Date
+          }));
+          resolve(events.sort((a: any, b: any) => a.date.getTime() - b.date.getTime()));
+      };
+      request.onerror = () => reject(request.error);
+  });
+};
+
+export const createEvent = async (event: Omit<CalendarEvent, 'id'>): Promise<CalendarEvent> => {
+  const store = await getStore('events', 'readwrite');
+  const newEvent = {
+      id: Date.now().toString(),
+      ...event,
+      date: event.date.toISOString() // Store as string in IDB
+  };
+  
+  return new Promise((resolve, reject) => {
+      const request = store.add(newEvent);
+      request.onsuccess = () => resolve({ ...event, id: newEvent.id } as CalendarEvent);
+      request.onerror = () => reject(request.error);
+  });
+};
+
+// --- Mocks for External Data (Portal, Library) ---
 
 export const fetchLibraryResources = async (query: string): Promise<LibraryResource[]> => {
     return new Promise((resolve) => {
@@ -158,7 +199,6 @@ export const fetchStudentPortalData = async (): Promise<{
     timetable: TimetableEntry[];
     finance: FinancialStatus;
 }> => {
-    // In a real app, this would be: await fetch('https://portal.makerere.ac.ug/api/student/data')
     return new Promise((resolve) => {
         setTimeout(() => {
             resolve({
@@ -188,40 +228,4 @@ export const fetchStudentPortalData = async (): Promise<{
             });
         }, 800);
     });
-}
-
-// --- Calendar Service (Firestore) ---
-
-export const fetchEvents = async (): Promise<CalendarEvent[]> => {
-    try {
-        const q = query(collection(db, "events"), orderBy("date", "asc"));
-        const querySnapshot = await getDocs(q);
-        const events: CalendarEvent[] = [];
-        querySnapshot.forEach((doc) => {
-            const data = doc.data();
-            events.push({ 
-                id: doc.id, 
-                ...data,
-                date: data.date.toDate() // Convert Firestore Timestamp to JS Date
-            } as CalendarEvent);
-        });
-        return events;
-    } catch (error) {
-        console.error("Error fetching events:", error);
-        return [];
-    }
-}
-
-export const createEvent = async (event: Omit<CalendarEvent, 'id'>): Promise<CalendarEvent> => {
-    try {
-        const docRef = await addDoc(collection(db, "events"), {
-            ...event,
-            // Firestore stores dates as Timestamps, usually auto-converted by SDK
-        });
-        
-        return { ...event, id: docRef.id } as CalendarEvent;
-    } catch (error) {
-        console.error("Error adding event:", error);
-        throw error;
-    }
 }

@@ -237,12 +237,14 @@ export const ReadingRoom: React.FC<ReadingRoomProps> = ({
 
   const startEditing = (e: React.MouseEvent, doc: Document) => {
       e.stopPropagation();
+      e.preventDefault();
       setEditingDocId(doc.id);
       setEditTitle(doc.title);
   };
 
   const saveTitle = (e: React.MouseEvent, id: string) => {
       e.stopPropagation();
+      e.preventDefault();
       if (editTitle.trim()) {
           onRenameDocument(id, editTitle);
           audio.playSuccess();
@@ -252,11 +254,13 @@ export const ReadingRoom: React.FC<ReadingRoomProps> = ({
 
   const cancelEdit = (e: React.MouseEvent) => {
       e.stopPropagation();
+      e.preventDefault();
       setEditingDocId(null);
   };
 
   const triggerDelete = (e: React.MouseEvent, id: string) => {
       e.stopPropagation();
+      e.preventDefault();
       if (window.confirm("Are you sure you want to delete this document?")) {
           onDeleteDocument(id);
           audio.playNotification();
@@ -307,23 +311,25 @@ export const ReadingRoom: React.FC<ReadingRoomProps> = ({
                             hoverEffect 
                             glowColor="blue"
                           >
-                              <div onClick={() => { audio.playClick(); onSelectDocument(doc); }} className="relative z-10">
+                              {/* Interactive Content Zone */}
+                              <div className="relative z-10">
+                                  {/* Header with Explicit Action Buttons */}
                                   <div className="flex items-start justify-between mb-4">
                                       <div className="p-3 bg-blue-500/10 rounded-xl text-blue-600 dark:text-blue-400">
                                           <FileText size={24} />
                                       </div>
-                                      {/* Action Buttons */}
-                                      <div className="flex items-center gap-1">
+                                      {/* Stopped Propagation Container for Buttons */}
+                                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                                          <button 
                                             onClick={(e) => startEditing(e, doc)}
-                                            className="p-2 text-gray-400 hover:text-otic-orange hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors"
+                                            className="p-2 text-gray-400 hover:text-otic-orange hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors z-20 relative"
                                             title="Rename"
                                          >
                                              <Edit2 size={16} />
                                          </button>
                                          <button 
                                             onClick={(e) => triggerDelete(e, doc.id)}
-                                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors"
+                                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors z-20 relative"
                                             title="Delete"
                                          >
                                              <Trash2 size={16} />
@@ -331,36 +337,39 @@ export const ReadingRoom: React.FC<ReadingRoomProps> = ({
                                       </div>
                                   </div>
                                   
-                                  {editingDocId === doc.id ? (
-                                      <div className="mb-2 flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                                          <input 
-                                            type="text" 
-                                            value={editTitle}
-                                            onChange={(e) => setEditTitle(e.target.value)}
-                                            className="w-full bg-white/50 dark:bg-black/20 border border-gray-300 dark:border-white/20 rounded-lg px-2 py-1 text-sm font-bold text-gray-800 dark:text-white focus:border-otic-orange outline-none"
-                                            autoFocus
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') saveTitle(e as any, doc.id);
-                                                if (e.key === 'Escape') cancelEdit(e as any);
-                                            }}
-                                          />
-                                          <button onClick={(e) => saveTitle(e, doc.id)} className="text-green-500 hover:text-green-600"><Check size={18}/></button>
-                                          <button onClick={(e) => cancelEdit(e)} className="text-red-500 hover:text-red-600"><XIcon size={18}/></button>
+                                  {/* Main Click Area for Opening */}
+                                  <div onClick={() => { audio.playClick(); onSelectDocument(doc); }}>
+                                      {editingDocId === doc.id ? (
+                                          <div className="mb-2 flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                              <input 
+                                                type="text" 
+                                                value={editTitle}
+                                                onChange={(e) => setEditTitle(e.target.value)}
+                                                className="w-full bg-white/50 dark:bg-black/20 border border-gray-300 dark:border-white/20 rounded-lg px-2 py-1 text-sm font-bold text-gray-800 dark:text-white focus:border-otic-orange outline-none"
+                                                autoFocus
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') saveTitle(e as any, doc.id);
+                                                    if (e.key === 'Escape') cancelEdit(e as any);
+                                                }}
+                                              />
+                                              <button onClick={(e) => saveTitle(e, doc.id)} className="text-green-500 hover:text-green-600"><Check size={18}/></button>
+                                              <button onClick={(e) => cancelEdit(e)} className="text-red-500 hover:text-red-600"><XIcon size={18}/></button>
+                                          </div>
+                                      ) : (
+                                          <h3 className="font-bold text-lg text-gray-800 dark:text-white mb-2 line-clamp-1 group-hover:text-otic-orange transition-colors">{doc.title}</h3>
+                                      )}
+                                      
+                                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 uppercase tracking-wider">{doc.type} • {doc.category}</p>
+                                      <div className="flex items-center justify-between text-xs text-gray-400">
+                                          <span>Added: {new Date(doc.uploadDate).toLocaleDateString()}</span>
+                                          <span className="group-hover:translate-x-1 transition-transform text-otic-orange font-medium">Open →</span>
                                       </div>
-                                  ) : (
-                                      <h3 className="font-bold text-lg text-gray-800 dark:text-white mb-2 line-clamp-1 group-hover:text-otic-orange transition-colors">{doc.title}</h3>
-                                  )}
-                                  
-                                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 uppercase tracking-wider">{doc.type} • {doc.category}</p>
-                                  <div className="flex items-center justify-between text-xs text-gray-400">
-                                      <span>Added: {new Date(doc.uploadDate).toLocaleDateString()}</span>
-                                      <span className="group-hover:translate-x-1 transition-transform text-otic-orange font-medium">Open →</span>
+                                      {doc.contextReady && (
+                                           <div className="absolute bottom-4 right-16 px-2 py-1 bg-green-500/10 text-green-600 text-[10px] rounded-full flex items-center gap-1">
+                                              <Sparkles size={8} /> AI Ready
+                                          </div>
+                                      )}
                                   </div>
-                                  {doc.contextReady && (
-                                       <div className="absolute bottom-4 right-16 px-2 py-1 bg-green-500/10 text-green-600 text-[10px] rounded-full flex items-center gap-1">
-                                          <Sparkles size={8} /> AI Ready
-                                      </div>
-                                  )}
                               </div>
                           </GlassCard>
                       ))}
@@ -408,6 +417,8 @@ export const ReadingRoom: React.FC<ReadingRoomProps> = ({
 
                      <button 
                         onClick={(e) => { 
+                            e.preventDefault();
+                            e.stopPropagation();
                             if(window.confirm("Delete this document?")) { 
                                 onDeleteDocument(activeDocument.id); 
                                 audio.playNotification();
